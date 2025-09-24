@@ -1,0 +1,42 @@
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+# Board size
+board_w, board_h = 50, 50
+
+# Components: (name, width, height, x, y, rotation)
+components = [
+    ("USB_CONNECTOR", 5, 5, 20, 45, 90),
+    ("MIKROBUS_CONNECTOR_1", 5, 15, 36, 0, 0),
+    ("MIKROBUS_CONNECTOR_2", 5, 15, 14, 35, 0),
+    ("MICROCONTROLLER", 5, 5, 22, 21, 0),
+    ("CRYSTAL", 5, 5, 22, 11, 0)
+]
+
+# Keep-out zone (x1, y1, x2, y2)
+keep_out = (17.5, 35.0, 27.5, 50)
+
+# Plot board
+fig, ax = plt.subplots(figsize=(6,6))
+ax.set_xlim(0, board_w)
+ax.set_ylim(0, board_h)
+ax.set_aspect('equal')
+ax.set_title("2D Rectangular Packing - Component Placement")
+
+# Draw board outline
+ax.add_patch(patches.Rectangle((0,0), board_w, board_h, fill=False, edgecolor='black'))
+
+# Draw keep-out zone
+ax.add_patch(patches.Rectangle((keep_out[0], keep_out[1]), keep_out[2]-keep_out[0], keep_out[3]-keep_out[1], 
+                               linewidth=1, edgecolor='red', facecolor='none', linestyle='--'))
+
+# Draw components
+for name, w, h, x, y, rot in components:
+    if rot in [90, 270]:
+        w, h = h, w
+    rect = patches.Rectangle((x,y), w, h, linewidth=1, edgecolor='blue', facecolor='lightblue')
+    ax.add_patch(rect)
+    ax.text(x + w/2, y + h/2, name, ha='center', va='center', fontsize=6)
+
+# Show
+plt.show()

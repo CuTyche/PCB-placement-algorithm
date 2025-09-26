@@ -1,42 +1,209 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import numpy as np
+from itertools import permutations
 
-# Board size
-board_w, board_h = 50, 50
+class ComponentPacker:
+    def __init__(self, board_width, board_height):
+        self.board_w = board_width
+        self.board_h = board_height
+        self.components = []
+        self.keep_out_zones = []
+        
+    def add_component(self, name, width, height, rotation=0):
+        """Add a component with optional rotation capability"""
+        self.components.append({
+            'name': name,
+            'width': width,
+            'height': height,
+            'rotation': rotation  # 0 = no rotation, 1 = can rotate 90°
+        })
+    
+    def add_keep_out_zone(self, x1, y1, x2, y2):
+        """Add a keep-out zone where components cannot be placed"""
+        self.keep_out_zones.append((x1, y1, x2, y2))
+    
+    def is_valid_placement(self, x, y, width, height, placed_components):
+        """Check if placement is valid (no overlaps and within board)"""
+        # Check board boundaries
+        if x < 0 or y < 0 or x + width > self.board_w or y + height > self.board_h:
+            return False
+        
+        # Check keep-out zones
+        for kx1, ky1, kx2, ky2 in self.keep_out_zones:
+            if not (x + width <= kx1 or x >= kx2 or y + height <= ky1 or y >= ky2):
+                return False
+        
+        # Check overlap with other components
+        for comp in placed_components:
+            cx, cy, cw, ch = comp['x'], comp['y'], comp['width'], comp['height']
+            if not (x + width <= cx or x >= cx + cw or y + height <= cy or y >= cy + ch):
+                return False
+        
+        return True
+    
+    def try_place_component(self, component, placed_components, strategy='bottom-left'):
+        """Try to place a component using specified strategy"""
+        name, width, height, can_rotate = component
+        
+        # Try both orientations if rotation is allowed
+        orientations = [(width, height)]
+        if can_rotate:
+            orientations.append((height, width))
+        
+        for w, h in orientations:
+            # Try different placement strategies
+            if strategy == 'bottom-left':
+                # Scan from bottom-left corner
+                for y in range(self.board_h - h + 1):
+                    for x in range(self.board_w - w + 1):
+                        if self.is_valid_placement(x, y, w, h, placed_components):
+                            return x, y, w, h
+            elif strategy == 'best-fit':
+                # Try to find placement that minimizes wasted space
+                best_placement = None
+                best_score = float('inf')
+                
+                for y in range(self.board_h - h + 1):
+                    for x in range(self.board_w - w + 1):
+                        if self.is_valid_placement(x, y, w, h, placed_components):
+                            # Score based on proximity to board center and compactness
+                            score = abs(x + w/2 - self.board_w/2) + abs(y + h/2 - self.board_h/2)
+                            if score < best_score:
+                                best_score = score
+                                best_placement = (x, y, w, h)
+                
+                if best_placement:
+                    return best_placement
+        
+        return None  # No valid placement found
+    
+    def pack_components(self, ordering_strategy='largest-first'):
+        """Pack components using specified ordering strategy"""
+        # Order components based on strategy
+        if ordering_strategy == 'largest-first':
+            ordered_components = sorted(self.components, 
+                                      key=lambda c: c['width'] * c['height'], 
+                                      reverse=True)
+        elif ordering_strategy == 'smallest-first':
+            ordered_components = sorted(self.components, 
+                                      key=lambda c: c['width'] * c['height'])
+        else:  # original order
+            ordered_components = self.components.copy()
+        
+        placed_components = []
+        failed_components = []
+        
+        for component in ordered_components:
+            placement = self.try_place_component(
+                (component['name'], component['width'], component['height'], component['rotation']),
+                placed_components
+            )
+            
+            if placement:
+                x, y, w, h = placement
+                placed_components.append({
+                    'name': component['name'],
+                    'x': x, 'y': y, 'width': w, 'height': h
+                })
+            else:
+                failed_components.append(component)
+        
+        return placed_components, failed_components
+    
+    def optimize_packing(self, max_iterations=100):
+        """Try different strategies to optimize packing"""
+        best_placement = None
+        best_failed_count = len(self.components) + 1
+        
+        strategies = ['largest-first', 'smallest-first']
+        placement_strategies = ['bottom-left', 'best-fit']
+        
+        for order_strat in strategies:
+            for place_strat in placement_strategies:
+                # Temporary modification for strategy testing
+                temp_components = self.components.copy()
+                
+                if order_strat == 'largest-first':
+                    temp_components.sort(key=lambda c: c['width'] * c['height'], reverse=True)
+                else:
+                    temp_components.sort(key=lambda c: c['width'] * c['height'])
+                
+                placed, failed = self.pack_components(order_strat)
+                
+                if len(failed) < best_failed_count:
+                    best_failed_count = len(failed)
+                    best_placement = placed
+                
+                if best_failed_count == 0:  # Perfect packing found
+                    break
+            
+            if best_failed_count == 0:
+                break
+        
+        return best_placement, failed_components if 'failed_components' in locals() else []
 
-# Components: (name, width, height, x, y, rotation)
-components = [
-    ("USB_CONNECTOR", 5, 5, 20, 45, 90),
-    ("MIKROBUS_CONNECTOR_1", 5, 15, 36, 0, 0),
-    ("MIKROBUS_CONNECTOR_2", 5, 15, 14, 35, 0),
-    ("MICROCONTROLLER", 5, 5, 22, 21, 0),
-    ("CRYSTAL", 5, 5, 22, 11, 0)
-]
+def main():
+    # Create packer instance
+    packer = ComponentPacker(50, 50)
+    
+    # Define components (name, width, height, can_rotate)
+    components = [
+        ("USB_CONNECTOR", 5, 5, True),
+        ("MIKROBUS_CONNECTOR_1", 5, 15, True),
+        ("MIKROBUS_CONNECTOR_2", 5, 15, True),
+        ("MICROCONTROLLER", 5, 5, True),
+        ("CRYSTAL", 5, 5, True)
+    ]
+    
+    for name, w, h, rot in components:
+        packer.add_component(name, w, h, rot)
+    
+    # Add keep-out zone
+    packer.add_keep_out_zone(17.5, 35.0, 27.5, 50)
+    
+    # Pack components
+    placed_components, failed_components = packer.optimize_packing()
+    
+    # Print results
+    print("Placed components:")
+    for comp in placed_components:
+        print(f"{comp['name']}: ({comp['x']}, {comp['y']}) - {comp['width']}x{comp['height']}")
+    
+    if failed_components:
+        print("\nFailed to place:")
+        for comp in failed_components:
+            print(f"{comp['name']}: {comp['width']}x{comp['height']}")
+    
+    # Visualize results
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_xlim(0, 50)
+    ax.set_ylim(0, 50)
+    ax.set_aspect('equal')
+    ax.set_title("Algorithmic Component Placement\n(No Hardcoded Positions)")
+    ax.grid(True, alpha=0.3)
+    
+    # Draw board
+    ax.add_patch(patches.Rectangle((0, 0), 50, 50, fill=False, edgecolor='black', linewidth=2))
+    
+    # Draw keep-out zone
+    kx1, ky1, kx2, ky2 = 17.5, 35.0, 27.5, 50
+    ax.add_patch(patches.Rectangle((kx1, ky1), kx2-kx1, ky2-ky1, 
+                                 linewidth=2, edgecolor='red', facecolor='lightpink', alpha=0.5, linestyle='--'))
+    ax.text(kx1 + (kx2-kx1)/2, ky1 + (ky2-ky1)/2, 'KEEP-OUT\nZONE', 
+            ha='center', va='center', color='red', fontweight='bold')
+    
+    # Draw placed components
+    colors = plt.cm.Set3(np.linspace(0, 1, len(placed_components)))
+    for i, comp in enumerate(placed_components):
+        rect = patches.Rectangle((comp['x'], comp['y']), comp['width'], comp['height'],
+                               linewidth=2, edgecolor='blue', facecolor=colors[i], alpha=0.7)
+        ax.add_patch(rect)
+        ax.text(comp['x'] + comp['width']/2, comp['y'] + comp['height']/2, 
+                comp['name'], ha='center', va='center', fontsize=8, fontweight='bold')
+    
+    plt.tight_layout()
+    plt.show()
 
-# Keep-out zone (x1, y1, x2, y2)
-keep_out = (17.5, 35.0, 27.5, 50)
-
-# Plot board
-fig, ax = plt.subplots(figsize=(6,6))
-ax.set_xlim(0, board_w)
-ax.set_ylim(0, board_h)
-ax.set_aspect('equal')
-ax.set_title("2D Rectangular Packing - Component Placement")
-
-# Draw board outline
-ax.add_patch(patches.Rectangle((0,0), board_w, board_h, fill=False, edgecolor='black'))
-
-# Draw keep-out zone
-ax.add_patch(patches.Rectangle((keep_out[0], keep_out[1]), keep_out[2]-keep_out[0], keep_out[3]-keep_out[1], 
-                               linewidth=1, edgecolor='red', facecolor='none', linestyle='--'))
-
-# Draw components
-for name, w, h, x, y, rot in components:
-    if rot in [90, 270]:
-        w, h = h, w
-    rect = patches.Rectangle((x,y), w, h, linewidth=1, edgecolor='blue', facecolor='lightblue')
-    ax.add_patch(rect)
-    ax.text(x + w/2, y + h/2, name, ha='center', va='center', fontsize=6)
-
-# Show
-plt.show()
+if __name__ == "__main__":
+    main()
